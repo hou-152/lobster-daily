@@ -59,6 +59,8 @@ def main():
     parser.add_argument("--dry-run", action="store_true", help="预演（打印将执行的命令）")
     parser.add_argument("--push-feishu", action="store_true", help="推送到飞书云文档")
     parser.add_argument("--with-distill", action="store_true", help="生成提炼任务清单（需 LLM 执行）")
+    parser.add_argument("--with-scholar", action="store_true",
+                        help="搜索步骤使用 Semantic Scholar 学术通道")
     parser.add_argument("--workdir", default=None, help="工作目录（默认 /tmp/lobster-daily-run）")
     parser.add_argument("--top", type=int, default=5, help="入选数量")
     parser.add_argument("--days", type=int, default=1, help="需求扫描天数")
@@ -92,12 +94,14 @@ def main():
 
     # ①b 采集（搜索通道，按需：只搜 RSS 未覆盖的需求，合并进候选池）
     # 放在需求倒推之后：搜索读的是最新画像，与评分阶段一致
-    steps.append(("①b 采集 搜索 (search_collect, 按需)",
-                  ["python3", str(SCRIPTS["search"]),
-                   "--profile", str(profile_path),
-                   "--top", str(max(3, args.top)),
-                   "--rss-candidates", str(cand_path),
-                   "--append", str(cand_path)]))
+    search_cmd = ["python3", str(SCRIPTS["search"]),
+                  "--profile", str(profile_path),
+                  "--top", str(max(3, args.top)),
+                  "--rss-candidates", str(cand_path),
+                  "--append", str(cand_path)]
+    if args.with_scholar:
+        search_cmd.append("--scholar")
+    steps.append(("①b 采集 搜索 (search_collect, 按需)", search_cmd))
 
     # ③ 评分过滤
     steps.append(("③ 评分过滤 (lobster-score-filter)",

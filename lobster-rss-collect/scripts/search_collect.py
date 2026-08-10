@@ -27,6 +27,7 @@ import re
 import sys
 import time
 import unicodedata
+import urllib.error
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -34,6 +35,7 @@ from pathlib import Path
 
 TIMEOUT = 15
 USER_AGENT = "lobster-rss-collect/0.1 search-channel (open source daily digest)"
+SCHOLAR_USER_AGENT = "lobster-rss-collect/0.1 scholar-channel"
 
 # 域名黑名单（已知营销号/低质站，命中直接过滤）。初始少量，后续按需增补。
 DOMAIN_BLACKLIST = {
@@ -63,6 +65,36 @@ def fetch_rss(query: str, count: int = 10) -> str:
     req = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
     with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
         return resp.read().decode("utf-8", errors="replace")
+
+
+def fetch_semantic_scholar(query: str, limit: int = 5) -> list:
+    """通过 Semantic Scholar Graph API 搜索论文并转成统一候选结构。"""
+    params = urllib.parse.urlencode({
+        "query": query,
+        "limit": limit,
+        "fields": "title,abstract,url,year,publicationDate",
+    })
+    url = f"https://api.semanticscholar.org/graph/v1/paper/search?{params}"
+    req = urllib.request.Request(url, headers={"User-Agent": SCHOLAR_USER_AGENT})
+    with urllib.request.urlopen(req, timeout=TIMEOUT) as resp:
+        payload = json.loads(resp.read().decode("utf-8", errors="replace"))
+
+    items = []
+    for paper in payload.get("data", []):
+        year = paper.get("year")
+        published = paper.get("publicationDate") or (f"{year}-01-01" if year else "")
+        items.append({
+            "title": (paper.get("title") or "").strip(),
+            "url": (paper.get("url") or "").strip(),
+            "summary": (paper.get("abstract") or "").strip(),
+            "published": published,
+            "source": f"scholar:{query}",
+            "category": "scholar",
+            "priority": "medium",
+            "channel": "scholar",
+            "tier": 1,
+        })
+    return items
 
 
 def parse_search_rss(xml_text: str, query: str) -> list:
@@ -155,7 +187,8 @@ def normalize_title(title: str) -> str:
 
 
 def collect(queries: list, count: int = 10, max_per_query: int = 10,
-            dedup: bool = True, min_summary: int = MIN_SUMMARY_LEN) -> dict:
+            dedup: bool = True, min_summary: int = MIN_SUMMARY_LEN,
+            scholar: bool = False) -> dict:
     """对每个需求关键词执行搜索 + 质量预筛（去重/黑名单/营销词/摘要长度/知乎降权）。"""
     results = []
     seen_titles = set()
@@ -163,12 +196,15 @@ def collect(queries: list, count: int = 10, max_per_query: int = 10,
              "marketing": 0, "short_summary": 0, "zhihu_penalized": 0,
              "kept": 0, "errors": []}
 
-    for q in queries:
+    for index, q in enumerate(queries):
         stats["queries"] += 1
         per_query_kept = 0
         try:
-            xml_text = fetch_rss(q, count)
-            items = parse_search_rss(xml_text, q)
+            if scholar:
+                items = fetch_semantic_scholar(q, count)
+            else:
+                xml_text = fetch_rss(q, count)
+                items = parse_search_rss(xml_text, q)
             stats["fetched"] += len(items)
             for it in items:
                 # 每 query 独立上限，不影响其他 query
@@ -197,14 +233,21 @@ def collect(queries: list, count: int = 10, max_per_query: int = 10,
                 if "zhihu.com" in it["url"]:
                     stats["zhihu_penalized"] += 1
                     it["_zhihu_penalty"] = ZHIHU_PENALTY
-                # 信息层级：按域名推断（搜索无 tier 配置，统一推断）
-                it["tier"] = infer_tier(it["url"])
+                # 学术论文固定为一手源；普通搜索结果按域名推断信息层级
+                if not scholar:
+                    it["tier"] = infer_tier(it["url"])
                 results.append(it)
                 per_query_kept += 1
                 stats["kept"] += 1
+        except urllib.error.HTTPError as e:
+            if scholar and e.code == 429:
+                stats["errors"].append(f"{q}: Semantic Scholar HTTP 429 (rate limited)")
+            else:
+                stats["errors"].append(f"{q}: HTTP {e.code} {e.reason}")
         except Exception as e:
             stats["errors"].append(f"{q}: {e}")
-        time.sleep(1)  # 轻量限速，避免被 Bing 429
+        if index < len(queries) - 1:
+            time.sleep(3 if scholar else 1)  # Scholar 无 key 至少 3 秒/请求
 
     # 知乎降权排序：普通项(1.0)在前，知乎(2.0)在后；稳定排序保持组内原序
     results.sort(key=lambda it: it.get("_zhihu_penalty", 1.0))
@@ -246,6 +289,8 @@ def main():
     parser.add_argument("--max", type=int, default=10, help="每需求最多保留候选数")
     parser.add_argument("--out", default=None, help="输出 JSON 路径（默认 stdout）")
     parser.add_argument("--no-dedup", action="store_true", help="关闭标题去重")
+    parser.add_argument("--scholar", action="store_true",
+                        help="使用 Semantic Scholar 学术搜索通道（默认 Bing RSS）")
     parser.add_argument("--rss-candidates", default=None,
                         help="RSS 通道候选 JSON：用于判断已覆盖需求，跳过不搜（按需启用）")
     parser.add_argument("--append", default=None,
@@ -278,12 +323,13 @@ def main():
         print("⚠️ 画像为空，无可搜索需求", file=sys.stderr)
         sys.exit(0)
 
-    print(f"🔍 搜索通道：{len(queries)} 个需求关键词", file=sys.stderr)
+    channel_name = "Semantic Scholar 学术" if args.scholar else "Bing RSS"
+    print(f"🔍 {channel_name}搜索通道：{len(queries)} 个需求关键词", file=sys.stderr)
     for q in queries:
         print(f"   - {q}", file=sys.stderr)
 
     result = collect(queries, count=args.count, max_per_query=args.max,
-                     dedup=not args.no_dedup)
+                     dedup=not args.no_dedup, scholar=args.scholar)
     stats = result["stats"]
     print(f"\n📊 统计: 抓取 {stats['fetched']} → 去重 {stats['deduped']} / "
           f"黑名单 {stats['blacklisted']} / 营销 {stats['marketing']} / "
