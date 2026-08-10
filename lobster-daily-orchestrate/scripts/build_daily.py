@@ -135,13 +135,23 @@ def build_daily(top_items: list, notes_dir: Path, date_str: str, embed: bool = T
                     lines.append(f"- 🧠 [概念提取]({concept.name})")
                 lines.append("")
 
-    # 推荐理由区（基于画像确定性生成，非占位符）
+    # 推荐理由区：优先用笔记"与我相关"的迁移路径，退化到画像命中/通用文案
     lines.append("---")
     lines.append("## 💡 推荐理由")
     lines.append("")
     for i, item in enumerate(top_items, 1):
         title = item.get('title', '')[:40]
-        reason = generate_reason(item, needs)
+        reason = None
+        note = notes_dir / f"{item.get('source', '')}-{i}-notes.md"
+        if note.exists():
+            txt = note.read_text(encoding="utf-8", errors="replace")
+            m = re.search(r"## 与我相关(.*?)(?=\n## |\Z)", txt, re.S)
+            if m:
+                related = [l.strip().lstrip('-').strip() for l in m.group(1).splitlines() if l.strip()]
+                if related:
+                    reason = " ".join(related[:2])
+        if not reason:
+            reason = generate_reason(item, needs)
         lines.append(f"- **{i}｜{title}**：{reason}")
     lines.append("")
 

@@ -158,10 +158,47 @@ def add_permission(token: str, doc_id: str, open_id: str):
         return False
 
 
+def upload_image(token: str, doc_id: str, img_path: Path) -> str:
+    """上传图片到飞书 docx（media upload_all），返回 file_token。"""
+    import uuid
+    boundary = uuid.uuid4().hex
+    file_bytes = img_path.read_bytes()
+    fields = {
+        "file_name": img_path.name,
+        "parent_type": "docx_image",
+        "parent_node": doc_id,
+        "size": str(len(file_bytes)),
+    }
+    body = b""
+    for k, v in fields.items():
+        body += f"--{boundary}\r\nContent-Disposition: form-data; name=\"{k}\"\r\n\r\n{v}\r\n".encode()
+    body += f"--{boundary}\r\nContent-Disposition: form-data; name=\"file\"; filename=\"{img_path.name}\"\r\nContent-Type: image/png\r\n\r\n".encode()
+    body += file_bytes + b"\r\n"
+    body += f"--{boundary}--\r\n".encode()
+    req = urllib.request.Request(
+        f"{FEISHU_BASE}/drive/v1/medias/upload_all",
+        data=body,
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": f"multipart/form-data; boundary={boundary}"},
+        method="POST"
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        d = json.loads(resp.read().decode())
+    if d.get("code") != 0:
+        raise RuntimeError(f"上传图片失败: {d.get('msg')}")
+    return d["data"]["file_token"]
+
+
 def parse_blocks(md_text: str, images_dir: Path = None) -> list:
-    """把日报 Markdown 转成 blocks 列表。图片引用替换为图片占位（由调用方处理）。"""
+    """把日报 Markdown 转成 blocks 列表。图片引用转为 _image 占位（main 上传后替换）。"""
     blocks = []
     for line in md_text.split("\n"):
+        m = re.match(r"^!\[(.+?)\]\((.+?)\)$", line.strip())
+        if m and images_dir is not None:
+            img_path = images_dir / Path(m.group(2)).name
+            if img_path.exists():
+                blocks.append({"_image": img_path})
+                continue
         b = line_to_block(line)
         if b:
             blocks.append(b)
@@ -184,7 +221,7 @@ def main():
     md_text = input_path.read_text(encoding="utf-8")
     title = args.title or f"🦞 龙虾日报 {input_path.stem}"
 
-    blocks = parse_blocks(md_text)
+    blocks = parse_blocks(md_text, Path(args.images_dir) if args.images_dir else None)
     print(f"📄 解析出 {len(blocks)} 个 block", file=sys.stderr)
 
     if args.dry_run:
@@ -213,9 +250,22 @@ def main():
     print("📝 创建文档...", file=sys.stderr)
     doc_id = create_doc(token, title)
 
-    # 3. 写入 blocks
+    # 3. 上传图片（把 _image 占位替换为真实 image block）
+    final_blocks = []
+    for b in blocks:
+        if isinstance(b, dict) and "_image" in b:
+            try:
+                ft = upload_image(token, doc_id, b["_image"])
+                final_blocks.append({"block_type": 27, "image": {"file_token": ft}})
+                print(f"  🖼️  上传图片: {b['_image'].name}", file=sys.stderr)
+            except Exception as e:
+                print(f"  ⚠️ 图片上传失败 {b['_image'].name}: {e}", file=sys.stderr)
+        else:
+            final_blocks.append(b)
+
+    # 4. 写入 blocks
     print("✍️  写入内容...", file=sys.stderr)
-    total = write_blocks(token, doc_id, blocks)
+    total = write_blocks(token, doc_id, final_blocks)
     print(f"  ✅ 写入 {total} blocks", file=sys.stderr)
 
     # 4. 设置权限
