@@ -14,7 +14,8 @@ lobster-rss-collect · 统一 RSS 抓取器（万物皆可 RSS）
     python3 fetch_rss.py --out candidates.json    # 输出到文件
 
 输出：JSON 数组，每项：
-    {title, url, summary, published, source, category, priority}
+    {title, url, summary, published, source, category, priority, channel}
+    channel 固定为 "rss"
 """
 
 import argparse
@@ -82,6 +83,7 @@ def parse_feed(xml_text: str, source_name: str, category: str, priority: str) ->
                 "source": source_name,
                 "category": category,
                 "priority": priority,
+                "channel": "rss",
             })
     else:
         # ---- RSS 2.0 格式 ----
@@ -98,6 +100,7 @@ def parse_feed(xml_text: str, source_name: str, category: str, priority: str) ->
                 "source": source_name,
                 "category": category,
                 "priority": priority,
+                "channel": "rss",
             })
 
     return items
