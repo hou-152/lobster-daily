@@ -50,7 +50,7 @@ def fetch_feed(url: str, retries: int = 2) -> str:
     raise last_err
 
 
-def parse_feed(xml_text: str, source_name: str, category: str, priority: str) -> list:
+def parse_feed(xml_text: str, source_name: str, category: str, priority: str, tier: int = 3) -> list:
     """解析 RSS 2.0 / Atom，统一输出条目列表。带容错：非法 XML 字符清理 + 裸 & 转义。"""
     import re
     # 清理 XML 1.0 不允许的控制字符（有些 feed 会混入）
@@ -84,6 +84,7 @@ def parse_feed(xml_text: str, source_name: str, category: str, priority: str) ->
                 "category": category,
                 "priority": priority,
                 "channel": "rss",
+                "tier": tier,
             })
     else:
         # ---- RSS 2.0 格式 ----
@@ -101,6 +102,7 @@ def parse_feed(xml_text: str, source_name: str, category: str, priority: str) ->
                 "category": category,
                 "priority": priority,
                 "channel": "rss",
+                "tier": tier,
             })
 
     return items
@@ -153,6 +155,43 @@ def load_sources(config_path: Path) -> dict:
     return sources
 
 
+def excluded_title(title: str, exclude_words: list) -> bool:
+    """标题是否命中排除词（arxiv 噪声控制：综述/预告类）。"""
+    if not exclude_words:
+        return False
+    t = title.lower()
+    return any(w.lower() in t for w in exclude_words)
+
+
+def parse_list_value(value) -> list:
+    """把 YAML 字符串值解析成列表（极简解析器不支持原生列表，兼容两种写法）：
+    - 字符串: "A Survey, Towards"  → ["A Survey", "Towards"]
+    - 列表文本: '["A Survey", "Towards"]' → 同上
+    - 已是 list: 直接返回
+    """
+    if value is None:
+        return []
+    if isinstance(value, list):
+        return [str(v).strip().strip('"').strip("'") for v in value if str(v).strip()]
+    text = str(value).strip()
+    if not text:
+        return []
+    # 去掉列表方括号
+    if text.startswith("[") and text.endswith("]"):
+        text = text[1:-1]
+    return [v.strip().strip('"').strip("'") for v in text.split(",") if v.strip()]
+
+
+def to_int(value, default: int = 0) -> int:
+    """极简 YAML 解析器把所有值当字符串，这里统一转 int。"""
+    if isinstance(value, int):
+        return value
+    try:
+        return int(str(value).strip())
+    except (TypeError, ValueError):
+        return default
+
+
 def fetch_github_trending(source: dict) -> list:
     """GitHub 趋势：调官方搜索 API，按 star 排序（无官方 RSS 的包装方案）。"""
     from urllib.parse import quote
@@ -176,6 +215,8 @@ def fetch_github_trending(source: dict) -> list:
             "source": source.get("name", "github-trending"),
             "category": source.get("category", "dev"),
             "priority": source.get("priority", "medium"),
+            "channel": "rss",
+            "tier": to_int(source.get("tier"), 1),
         })
     return items
 
@@ -205,15 +246,20 @@ def main():
         if args.category and feed.get("category") != args.category:
             continue
         name = feed.get("name", "unknown")
+        per_source_limit = to_int(feed.get("limit"), args.limit)
+        exclude = parse_list_value(feed.get("exclude_titles"))
         try:
             xml_text = fetch_feed(feed["url"])
             items = parse_feed(
                 xml_text, name,
                 feed.get("category", "general"),
                 feed.get("priority", "medium"),
+                to_int(feed.get("tier"), 3),
             )
-            all_items.extend(items[: args.limit])
-            print(f"  ✅ {name}: {len(items[:args.limit])} 条", file=sys.stderr)
+            # 标题排除（arxiv 噪声控制）
+            items = [it for it in items if not excluded_title(it["title"], exclude)]
+            all_items.extend(items[: per_source_limit])
+            print(f"  ✅ {name}: {len(items[:per_source_limit])} 条 (tier {to_int(feed.get('tier'), 3)})", file=sys.stderr)
         except Exception as e:
             print(f"  ⚠️  {name}: 抓取失败 ({e})", file=sys.stderr)
 

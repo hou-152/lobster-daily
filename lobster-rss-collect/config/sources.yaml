@@ -1,5 +1,10 @@
-# 龙虾日报 · 默认信息源（精简版，16个稳定源）
+# 龙虾日报 · 默认信息源（精简版，16个稳定源 + 3个arxiv一手源）
 # 更多源见 sources.optional.yaml（需要时手动启用）
+#
+# tier 信息层级（评分层据此加权：tier1 +0.5 / tier2 +0.3 / tier3 +0）：
+#   1 = 一手：原始研究论文（arxiv）、官方公告（GitHub Blog）、当事人博客（Karpathy/Sam Altman）
+#   2 = 二手：专业媒体解读（Quanta / MIT News / 爱范儿）
+#   3 = 三手：聚合/评论（HN Best / 阮一峰周刊 / 少数派）
 
 rss_feeds:
 
@@ -8,74 +13,114 @@ rss_feeds:
     url: "https://www.owenyoung.com/atom.xml"
     category: ai
     priority: high
+    tier: 2
   - name: magazine-sebastianraschka-com
     url: "https://magazine.sebastianraschka.com/feed"
     category: ai
     priority: high
+    tier: 1
   - name: lastweekin-ai
     url: "https://lastweekin.ai/feed"
     category: ai
     priority: high
+    tier: 2
   - name: karpathy-bearblog-dev
     url: "https://karpathy.bearblog.dev/feed/?type=rss"
     category: ai
     priority: high
+    tier: 1
   - name: blog-samaltman-com
     url: "https://blog.samaltman.com/posts.atom"
     category: ai
     priority: high
+    tier: 1
+
+  # --- 学术一手源 (3) ---
+  # arxiv RSS 每天几十篇，噪声大：用源级 limit 控制数量 + exclude_titles 排除综述/预告
+  - name: arxiv-cs-AI
+    url: "https://arxiv.org/rss/cs.AI"
+    category: ai
+    priority: medium
+    tier: 1
+    limit: 10
+    exclude_titles: ["A Survey", "Survey on", "Towards", "Revisiting"]
+  - name: arxiv-cs-CL
+    url: "https://arxiv.org/rss/cs.CL"
+    category: ai
+    priority: medium
+    tier: 1
+    limit: 10
+    exclude_titles: ["A Survey", "Survey on", "Towards", "Revisiting"]
+  - name: arxiv-q-bio-NC
+    url: "https://arxiv.org/rss/q-bio.NC"
+    category: science
+    priority: medium
+    tier: 1
+    limit: 10
+    exclude_titles: ["A Survey", "Survey on", "Towards", "Revisiting"]
 
   # --- 中文科技 (4) ---
   - name: feeds-feedburner-com
     url: "https://feeds.feedburner.com/ruanyifeng"
     category: chinese-tech
     priority: high
+    tier: 3
   - name: sspai-com
     url: "https://sspai.com/feed"
     category: chinese-tech
     priority: high
+    tier: 3
   - name: s-baoyu-io
     url: "https://s.baoyu.io/feed.xml"
     category: chinese-tech
     priority: high
+    tier: 3
   - name: feedx-ifanr
     url: "https://feedx.net/rss/ifanr.xml"
     category: chinese-tech
     priority: high
+    tier: 2
 
   # --- 国际深度 (1) ---
   - name: quantamagazine-org
     url: "https://www.quantamagazine.org/feed/"
     category: deep-reading
     priority: medium
+    tier: 2
 
   # --- 开发与工具 (3) ---
   - name: jvns-ca
     url: "https://jvns.ca/atom.xml"
     category: dev
     priority: medium
+    tier: 1
   - name: news-mit-edu
     url: "https://news.mit.edu/topic/mitcomputers-rss.xml"
     category: dev
     priority: medium
+    tier: 2
   - name: github-blog
     url: "https://github.blog/feed/"
     category: dev
     priority: medium
+    tier: 1
 
   # --- 其他 (3) ---
   - name: hnrss-org
     url: "https://hnrss.org/best"
     category: other
     priority: low
+    tier: 3
   - name: technologyreview-com
     url: "https://www.technologyreview.com/feed"
     category: other
     priority: low
+    tier: 2
   - name: feedx-nytimesdual
     url: "https://feedx.net/rss/nytimesdual.xml"
     category: other
     priority: low
+    tier: 2
 
 # 搜索兜底
 search_queries:

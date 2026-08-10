@@ -27,6 +27,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PRIORITY_WEIGHT = {"high": 1.5, "medium": 1.0, "low": 0.5}
+# 信息层级加权：一手 +0.5 / 二手 +0.3 / 三手 +0（四手已由采集层黑名单/营销词过滤）
+TIER_WEIGHT = {1: 0.5, 2: 0.3, 3: 0.0}
 # 分类偏好：默认均衡（不从画像学时不给 AI 特殊加成，避免硬编码偏见）
 # 分类权重实际由画像命中度驱动；此表仅作无画像时的兜底
 CATEGORY_PREF = {
@@ -197,12 +199,13 @@ def main():
             needs = profile.get("needs", [])
             print(f"🧠 画像需求: {len(needs)} 条", file=sys.stderr)
 
-    # 双评分
+    # 双评分 + tier 加成：tier 不进 quality 的 5.0 封顶（否则高质量候选的 tier 加权被吞）
     scored = []
     for cand in candidates:
         rel = relevance_score(cand, needs)
         qual = quality_score(cand)
-        total = rel * 0.6 + qual * 0.4  # 相关性权重 60%，质量 40%
+        tier_bonus = TIER_WEIGHT.get(cand.get("tier", 3), 0.0)
+        total = rel * 0.6 + qual * 0.4 + tier_bonus  # 相关性 60% + 质量 40% + 信息层级加成
         scored.append({**cand, "_score": {"relevance": round(rel, 2), "quality": round(qual, 2), "total": round(total, 2)}})
 
     # 过滤 + 排序

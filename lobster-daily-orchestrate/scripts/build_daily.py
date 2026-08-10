@@ -84,6 +84,10 @@ def build_daily(top_items: list, notes_dir: Path, date_str: str, embed: bool = T
             lines.append(f"*来源：{source}*")
         if score:
             lines.append(f"*评分：综合 {score.get('total', '?')}（相关性 {score.get('relevance', '?')} / 质量 {score.get('quality', '?')}）*")
+        tier = item.get("tier")
+        if tier:
+            tier_label = {1: "📄 一手", 2: "📰 二手", 3: "📚 三手"}.get(tier, f"tier{tier}")
+            lines.append(f"*信息层级：{tier_label}*")
         if summary:
             lines.append("")
             lines.append(summary[:200])

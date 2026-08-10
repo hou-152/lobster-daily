@@ -40,6 +40,10 @@ DOMAIN_BLACKLIST = {
     "adspower.net",        # 营销文（卖自己产品）
     "ai-bot.cn",           # 工具集目录站
 }
+# 搜索结果域名 → 信息层级推断（搜索无 sources.yaml tier，靠域名归类）
+TIER1_DOMAINS = {"arxiv.org", "nature.com", "science.org", "openai.com", "anthropic.com", "github.com"}
+TIER2_DOMAINS = {"quantamagazine.org", "technologyreview.com", "mit.edu", "news.mit.edu", "nytimes.com", "wsj.com", "economist.com"}
+TIER3_DOMAINS = {"zhihu.com", "reddit.com", "news.ycombinator.com", "csdn.net", "juejin.cn"}
 # 知乎降权：不拉黑（有优质回答），但命中则排序到候选尾部（升序 key=2.0 在 1.0 之后）
 ZHIHU_PENALTY = 2.0
 
@@ -129,6 +133,21 @@ def is_blacklisted(url: str) -> bool:
     return any(host == d or host.endswith("." + d) for d in DOMAIN_BLACKLIST)
 
 
+def infer_tier(url: str) -> int:
+    """按域名推断搜索结果的信息层级（1/2/3，未知默认 3）。
+    一手=学术/官方；二手=专业媒体；三手=聚合/社区。"""
+    host = hostname_of(url).lower()
+    if not host:
+        return 3
+    if any(host == d or host.endswith("." + d) for d in TIER1_DOMAINS):
+        return 1
+    if any(host == d or host.endswith("." + d) for d in TIER2_DOMAINS):
+        return 2
+    if any(host == d or host.endswith("." + d) for d in TIER3_DOMAINS):
+        return 3
+    return 3
+
+
 def normalize_title(title: str) -> str:
     """标题归一化：NFKC 统一全角/半角 + 小写 + 去标点，用于去重。"""
     t = unicodedata.normalize("NFKC", title or "").lower()
@@ -178,6 +197,8 @@ def collect(queries: list, count: int = 10, max_per_query: int = 10,
                 if "zhihu.com" in it["url"]:
                     stats["zhihu_penalized"] += 1
                     it["_zhihu_penalty"] = ZHIHU_PENALTY
+                # 信息层级：按域名推断（搜索无 tier 配置，统一推断）
+                it["tier"] = infer_tier(it["url"])
                 results.append(it)
                 per_query_kept += 1
                 stats["kept"] += 1
