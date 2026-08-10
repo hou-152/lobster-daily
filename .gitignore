@@ -1,0 +1,8 @@
+# 运行时产物
+data/user-profile.json
+artifacts/
+*.pyc
+__pycache__/
+
+# 敏感配置（示例配置才提交）
+# 真实 sources.yaml 含个人订阅，提交前改为 sources.example.yaml
