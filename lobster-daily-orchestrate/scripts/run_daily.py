@@ -28,6 +28,7 @@ from pathlib import Path
 SKILLS_DIR = Path(__file__).parent.parent  # lobster-daily-orchestrate 根
 SCRIPTS = {
     "collect": SKILLS_DIR.parent / "lobster-rss-collect" / "scripts" / "fetch_rss.py",
+    "search": SKILLS_DIR.parent / "lobster-rss-collect" / "scripts" / "search_collect.py",
     "needs": SKILLS_DIR.parent / "lobster-needs-extract" / "scripts" / "extract_needs.py",
     "score": SKILLS_DIR.parent / "lobster-score-filter" / "scripts" / "score_filter.py",
     "distill": SKILLS_DIR.parent / "lobster-distill" / "scripts" / "distill.py",
@@ -82,10 +83,18 @@ def main():
 
     steps = []
 
-    # ① 采集
-    steps.append(("① 采集 (lobster-rss-collect)",
+    # ① 采集（RSS 通道）
+    steps.append(("① 采集 RSS (lobster-rss-collect)",
                   ["python3", str(SCRIPTS["collect"]), "--limit", str(args.limit),
                    "--out", str(cand_path)]))
+
+    # ①b 采集（搜索通道，按需：只搜 RSS 未覆盖的需求，合并进候选池）
+    steps.append(("①b 采集 搜索 (search_collect, 按需)",
+                  ["python3", str(SCRIPTS["search"]),
+                   "--profile", str(profile_path),
+                   "--top", str(max(3, args.top)),
+                   "--rss-candidates", str(cand_path),
+                   "--append", str(cand_path)]))
 
     # ② 需求倒推
     steps.append(("② 需求倒推 (lobster-needs-extract)",
