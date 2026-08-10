@@ -149,11 +149,6 @@ def load_sources(config_path: Path) -> dict:
     flush_item()
     return sources
 
-    if current_item:
-        sources[current_section].append(current_item)
-
-    return sources
-
 
 def fetch_github_trending(source: dict) -> list:
     """GitHub 趋势：调官方搜索 API，按 star 排序（无官方 RSS 的包装方案）。"""

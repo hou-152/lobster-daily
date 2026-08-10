@@ -28,7 +28,8 @@ import urllib.error
 from pathlib import Path
 
 FEISHU_BASE = "https://open.feishu.cn/open-apis"
-DOC_DOMAIN = "https://j8v8p5qtm3.feishu.cn"  # 租户域名，可用 FEISHU_DOC_DOMAIN 覆盖
+# 租户域名：用环境变量覆盖，不硬编码（不同用户租户域名不同）
+DOC_DOMAIN = os.environ.get("FEISHU_DOC_DOMAIN", "")
 
 
 def get_token(app_id: str, app_secret: str) -> str:
@@ -218,6 +219,11 @@ def main():
         print(f"  {'✅' if ok else '⚠️'} 权限设置: {'成功' if ok else '失败（可手动分享）'}", file=sys.stderr)
 
     # 5. 输出链接
+    if not args.doc_domain:
+        print(f"\n⚠️ 未配置 FEISHU_DOC_DOMAIN（租户域名），无法生成访问链接", file=sys.stderr)
+        print(f"   文档已创建: doc_id={doc_id}", file=sys.stderr)
+        print(f"   设置方法: export FEISHU_DOC_DOMAIN=https://你的租户域名.feishu.cn", file=sys.stderr)
+        sys.exit(2)
     url = f"{args.doc_domain}/docx/{doc_id}"
     print(f"\n🎉 飞书云文档链接: {url}", file=sys.stderr)
     print(url)  # stdout 最后一行=链接，供 run_daily.py 捕获

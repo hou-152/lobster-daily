@@ -71,8 +71,7 @@ def main():
     workdir.mkdir(parents=True, exist_ok=True)
 
     cand_path = workdir / "candidates.json"
-    profile_path = Path.home() / ".openclaw-lobster2" / "agents" / "main" / "skills" / "lobster-needs-extract" / "data" / "user-profile.json"
-    # profile 默认路径：skill 自身 data 目录
+    # profile 默认路径：skill 自身 data 目录（唯一赋值）
     profile_path = SKILLS_DIR.parent / "lobster-needs-extract" / "data" / "user-profile.json"
     top_path = workdir / "top.json"
     tasks_path = workdir / "tasks.json"

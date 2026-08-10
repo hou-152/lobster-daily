@@ -27,16 +27,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 PRIORITY_WEIGHT = {"high": 1.5, "medium": 1.0, "low": 0.5}
+# 分类偏好：默认均衡（不从画像学时不给 AI 特殊加成，避免硬编码偏见）
+# 分类权重实际由画像命中度驱动；此表仅作无画像时的兜底
 CATEGORY_PREF = {
-    "ai": 1.2,          # AI 内容默认加分（通用偏好）
+    "ai": 1.0,
     "dev": 1.0,
     "chinese-tech": 1.0,
-    "deep-reading": 0.9,
-    "product": 0.9,
-    "podcast": 0.8,
-    "social": 0.7,
-    "wechat": 0.8,
-    "other": 0.7,
+    "deep-reading": 1.0,
+    "product": 1.0,
+    "podcast": 1.0,
+    "social": 1.0,
+    "wechat": 1.0,
+    "other": 1.0,
 }
 
 
@@ -66,6 +68,31 @@ def tokenize(text: str) -> set:
     return tokens
 
 
+def keyword_hit(keyword: str, title: str, summary: str) -> bool:
+    """判断需求关键词是否命中候选内容（修正子串匹配问题）。
+
+    规则：
+    - 英文关键词：前后不是英文字母/数字才算命中（Codex 可匹配 Codex反代；AI 不匹配 RAILWAY）
+    - 中文关键词：>=4 字整串匹配算强命中；2-3 字短词不单独命中（避免"学习"泛匹配）
+    - 其他（混合/短词）：直接子串
+    """
+    if not keyword or len(keyword) < 2:
+        return False
+    text = f"{title} {summary[:500]}".lower()
+    kw = keyword.lower()
+
+    # 英文/数字词：前后不能是英文字母或数字（中文不算边界，可紧邻）
+    if re.fullmatch(r"[a-z0-9][a-z0-9\-]*", kw):
+        return re.search(rf"(?<![a-zA-Z0-9]){re.escape(kw)}(?![a-zA-Z0-9])", text) is not None
+
+    # 中文：>=4 字整串匹配才算强命中；2-3 字短词不单独命中
+    if re.search(r"[\u4e00-\u9fff]", kw):
+        return len(kw) >= 4 and kw in text
+
+    # 其他：直接子串
+    return kw in text
+
+
 def relevance_score(candidate: dict, needs: list) -> float:
     """相关性：候选内容与需求画像的匹配度（0-5）。"""
     if not needs:
@@ -75,7 +102,7 @@ def relevance_score(candidate: dict, needs: list) -> float:
     summary = candidate.get("summary", "")
     category = candidate.get("category", "other")
 
-    # 候选关键词
+    # 候选关键词（用于 token 重叠兜底）
     cand_tokens = tokenize(title + " " + summary[:500])
 
     score = 0.0
@@ -84,17 +111,19 @@ def relevance_score(candidate: dict, needs: list) -> float:
         keyword = need.get("keyword", "")
         if not keyword or len(keyword) < 2:
             continue
-        kw_tokens = tokenize(keyword)
-        # 直接包含或关键词重叠
-        hit = False
-        if keyword.lower() in (title + " " + summary).lower():
-            hit = True
-        elif kw_tokens and kw_tokens & cand_tokens:
-            hit = True
-        if hit:
+        # 主路径：修正后的精确匹配
+        if keyword_hit(keyword, title, summary):
             weight = need.get("weight", 1.0)
             confidence = need.get("confidence", 0.5)
             score += weight * confidence
+            matched += 1
+            continue
+        # 兜底：中文短词（2-3字）通过 token 重叠判断，避免"学习"泛匹配
+        kw_tokens = tokenize(keyword)
+        if kw_tokens and len(keyword) <= 3 and (kw_tokens & cand_tokens):
+            weight = need.get("weight", 1.0)
+            confidence = need.get("confidence", 0.5)
+            score += weight * confidence * 0.3  # 短词命中降权
             matched += 1
 
     # 分类偏好加成（画像里高频的分类）

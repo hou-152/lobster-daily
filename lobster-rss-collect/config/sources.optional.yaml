@@ -1,13 +1,9 @@
-# ============================================================
-# 龙虾日报 · 信息源配置 (sources.yaml)
-# 万物皆可 RSS：所有源统一走 RSS 入口，采集层只写一个解析器
-# 修改此文件即可增删信息源，无需改代码
-# 源列表：35 个待启用源（多为 rsshub.app 公共实例限流，自建 RSSHub 后可启用）
-# ============================================================
+# 龙虾日报 · 可选信息源（实验性/需自建RSSHub的源）
+# 需要时把条目复制到 sources.yaml 启用
 
 rss_feeds:
 
-  # --- AI 与研究者 (5) ---
+  # --- AI 与研究者 (8) ---
   - name: rsshub-paulgraham-articles
     url: "https://rsshub.app/paulgraham/articles"
     category: ai
@@ -28,8 +24,20 @@ rss_feeds:
     url: "https://openai.com/blog/rss/"
     category: ai
     priority: high
+  - name: justlovemaki-github-io
+    url: "https://justlovemaki.github.io/CloudFlare-AI-Insight-Daily/rss.xml"
+    category: ai
+    priority: high
+  - name: openai-com-2
+    url: "https://openai.com/news/rss.xml"
+    category: ai
+    priority: high
+  - name: maggieappleton-com
+    url: "https://maggieappleton.com/rss.xml"
+    category: ai
+    priority: high
 
-  # --- 中文科技 (4) ---
+  # --- 中文科技 (5) ---
   - name: rsshub-latepost-4
     url: "https://rsshub.app/latepost/4"
     category: chinese-tech
@@ -46,8 +54,12 @@ rss_feeds:
     url: "https://rsshub.app/ftchinese/simplified/hotstoryby7day"
     category: chinese-tech
     priority: high
+  - name: feedx-shanghaishuping
+    url: "https://feedx.net/rss/shanghaishuping.xml"
+    category: chinese-tech
+    priority: high
 
-  # --- 国际深度 (3) ---
+  # --- 国际深度 (17) ---
   - name: gatesnotes-com
     url: "https://www.gatesnotes.com/rss"
     category: deep-reading
@@ -60,8 +72,90 @@ rss_feeds:
     url: "https://rsshub.app/economist/global-business-review/cn-en"
     category: deep-reading
     priority: medium
+  - name: tw93-fun
+    url: "https://tw93.fun/feed.xml"
+    category: deep-reading
+    priority: medium
+  - name: atlantic-technology
+    url: "https://www.theatlantic.com/feed/channel/technology/"
+    category: deep-reading
+    priority: medium
+  - name: atlantic-ideas
+    url: "https://www.theatlantic.com/feed/channel/ideas/"
+    category: deep-reading
+    priority: medium
+  - name: lesswrong-com
+    url: "https://www.lesswrong.com/feed.xml?view=curated-rss"
+    category: deep-reading
+    priority: medium
+  - name: atlantic-business
+    url: "https://www.theatlantic.com/feed/channel/business/"
+    category: deep-reading
+    priority: medium
+  - name: calnewport-com
+    url: "https://calnewport.com/blog/feed/"
+    category: deep-reading
+    priority: medium
+  - name: 1q43-blog
+    url: "https://1q43.blog/feed/"
+    category: deep-reading
+    priority: medium
+  - name: atlantic-science
+    url: "https://www.theatlantic.com/feed/channel/science/"
+    category: deep-reading
+    priority: medium
+  - name: scientificamerican-com
+    url: "https://www.scientificamerican.com/platform/syndication/rss/"
+    category: deep-reading
+    priority: medium
+  - name: economist-com
+    url: "https://www.economist.com/the-economist-explains/rss.xml"
+    category: deep-reading
+    priority: medium
+  - name: atlantic-all-2
+    url: "http://theatlantic.com/feed/all/"
+    category: deep-reading
+    priority: medium
+  - name: newyorker-com
+    url: "https://www.newyorker.com/feed/everything"
+    category: deep-reading
+    priority: medium
+  - name: waitbutwhy-com
+    url: "https://waitbutwhy.com/feed"
+    category: deep-reading
+    priority: medium
+  - name: the-verge
+    url: "https://www.theverge.com/rss/index.xml"
+    category: deep-reading
+    priority: medium
 
-  # --- 播客 (10) ---
+  # --- 开发与工具 (6) ---
+  - name: ia-net
+    url: "https://ia.net/feed"
+    category: dev
+    priority: medium
+  - name: obsidian-md
+    url: "https://obsidian.md/feed.xml"
+    category: dev
+    priority: medium
+  - name: apple-com
+    url: "https://www.apple.com/newsroom/rss-feed.rss"
+    category: dev
+    priority: medium
+  - name: obsidian-md-2
+    url: "https://obsidian.md/changelog.xml"
+    category: dev
+    priority: medium
+  - name: blog-cosmos-institute-org
+    url: "https://blog.cosmos-institute.org/feed"
+    category: dev
+    priority: medium
+  - name: v2ex
+    url: "https://www.v2ex.com/index.xml"
+    category: dev
+    priority: medium
+
+  # --- 播客 (11) ---
   - name: xy-zh-5e2aaf34
     url: "https://rsshub.app/xiaoyuzhou/podcast/5e2aaf34418a84a046543b0d"
     category: podcast
@@ -102,8 +196,12 @@ rss_feeds:
     url: "https://rsshub.app/xiaoyuzhou/podcast/626b46ea9cbbf0451cf5a962"
     category: podcast
     priority: medium
+  - name: feeds-simplecast-com
+    url: "https://feeds.simplecast.com/JGE3yC0V"
+    category: podcast
+    priority: medium
 
-  # --- 社媒/视频 (7) ---
+  # --- 社媒/视频 (8) ---
   - name: rsshub-follow-profile-jason5ng32
     url: "https://rsshub.app/follow/profile/jason5ng32"
     category: social
@@ -132,8 +230,12 @@ rss_feeds:
     url: "https://rsshub.app/twitter/user/karpathy"
     category: social
     priority: medium
+  - name: api-xgo-ing
+    url: "https://api.xgo.ing/rss/user/01f60d63a61b44d692cc35c7feb0b4a4"
+    category: social
+    priority: medium
 
-  # --- 微信公众号 (5) ---
+  # --- 微信公众号 (13) ---
   - name: wx-037632
     url: "https://wewerss.kicre.top/feeds/MP_WXS_3565037632.atom"
     category: wechat
@@ -154,16 +256,63 @@ rss_feeds:
     url: "https://wewerss.alphaxs.xyz/feeds/MP_WXS_3087832081.atom"
     category: wechat
     priority: low
+  - name: wx-unk
+    url: "https://wechat2rss.bestblogs.dev/feed/ff621c3e98d6ae6fceb3397e57441ffc6ea3c17f.xml"
+    category: wechat
+    priority: low
+  - name: wxscholar-fd6e5d
+    url: "https://raw.githubusercontent.com/osnsyc/Wechat-Scholar/main/channels/gh_114e76fd6e5d.xml"
+    category: wechat
+    priority: low
+  - name: jtk-GEYDANRV
+    url: "http://www.jintiankansha.me/rss/GEYDANRVGF6DQNRVMEYGEMZUMY4GIOLFGM3GGY3EHEYTQZLFG4ZDKY3DMFQWMYZQMM2DGOJZGZTA===="
+    category: wechat
+    priority: low
+  - name: wxscholar-6cc95c
+    url: "https://raw.githubusercontent.com/osnsyc/Wechat-Scholar/main/channels/gh_d00db26cc95c.xml"
+    category: wechat
+    priority: low
+  - name: wx-ScientificAmeric
+    url: "https://plink.anyfeeder.com/weixin/ScientificAmerican"
+    category: wechat
+    priority: low
+  - name: wxscholar-2a27f4
+    url: "https://raw.githubusercontent.com/osnsyc/Wechat-Scholar/main/channels/gh_108f2a2a27f4.xml"
+    category: wechat
+    priority: low
+  - name: wx-The-Intellectual
+    url: "https://plink.anyfeeder.com/weixin/The-Intellectual"
+    category: wechat
+    priority: low
+  - name: wxscholar-474692
+    url: "https://raw.githubusercontent.com/osnsyc/Wechat-Scholar/main/channels/gh_dbc0a5474692.xml"
+    category: wechat
+    priority: low
 
-  # --- 其他 (1) ---
+  # --- 其他 (5) ---
   - name: rsshub-github-trending-daily-any
     url: "https://rsshub.app/github/trending/daily/any"
     category: other
     priority: low
+  - name: quaily-com
+    url: "https://quaily.com/op7418/feed/atom"
+    category: other
+    priority: low
+  - name: wise-readwise-io
+    url: "https://wise.readwise.io/feed/"
+    category: other
+    priority: low
+  - name: billyoppenheimer-com
+    url: "https://billyoppenheimer.com/feed/"
+    category: other
+    priority: low
+  - name: blog-readwise-io
+    url: "https://blog.readwise.io/rss/"
+    category: other
+    priority: low
 
-# 搜索兜底（无 RSS/API 的源，需求信号驱动时才用）
+# 搜索兜底
 search_queries:
   - name: wechat-fallback
     keywords: []
     category: fallback
-    description: 无源内容，需求信号匹配时用 web_search 兜底

@@ -38,6 +38,13 @@ EXPLICIT_PATTERNS = [
     r"(?:这个|那个|这|那)\s*(?:问题|主题|方向|项目|东西|想法|概念|产品|工具)\s*(?:怎么样|怎么看|怎么做|是什么|好不好|值不值|可行吗)",
 ]
 
+# 伪需求过滤：这些词后面的内容不是真实需求信号
+FAKE_SIGNAL_PREFIXES = [
+    "一下", "注意", "看看", "想想", "试试", "问问", "了解", "确认", "检查",
+    "修改", "整理", "继续", "完成", "更新", "跑", "执行", "测试", "验证",
+    "这个理念", "方面", "时候", "事情", "东西", "情况", "问题", "方案",
+]
+
 # 停用词（过滤噪音）
 STOPWORDS = {
     "这个", "那个", "什么", "怎么", "为什么", "可以", "一个", "一下", "真的",
@@ -171,9 +178,10 @@ def merge_profile(profile_path: Path, explicit: Counter, implicit: Counter,
     # 现有需求索引
     existing = {n["keyword"]: n for n in profile["needs"]}
 
-    # 衰减：已有需求权重 * 0.7（时间衰减）
+    # 衰减：显式需求慢（×0.9，用户明确说过要长期稳定），隐式需求快（×0.7）
     for n in profile["needs"]:
-        n["weight"] = round(n.get("weight", 1) * 0.7, 2)
+        decay = 0.9 if n.get("type") == "explicit" else 0.7
+        n["weight"] = round(n.get("weight", 1) * decay, 2)
 
     # 合并显式需求（权重高）
     for signal, count in explicit.most_common(20):
