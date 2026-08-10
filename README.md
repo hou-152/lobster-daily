@@ -83,7 +83,7 @@ cp -R lobster-*/ ~/.agents/skills/
 
 ### 2. 配置信息源
 
-编辑 `lobster-rss-collect/config/sources.yaml`：
+编辑 `lobster-rss-collect/config/sources.yaml`。当前默认配置为精简版 **19 个 RSS 源**（其中 3 个 arxiv）；`USAGE.md` 中“54 个”的表述为旧版本说明，以实际配置为准。
 
 ```yaml
 rss_feeds:
