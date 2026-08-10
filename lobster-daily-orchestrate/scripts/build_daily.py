@@ -20,6 +20,24 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
+def clean_html(text: str) -> str:
+    """剥掉摘要里的 HTML 标签和实体，避免 <div>/<img> 原样进文档。"""
+    if not text:
+        return ""
+    # 去标签
+    text = re.sub(r"<[^>]+>", " ", text)
+    # 去 HTML 实体
+    text = re.sub(r"&nbsp;", " ", text)
+    text = re.sub(r"&amp;", "&", text)
+    text = re.sub(r"&lt;", "<", text)
+    text = re.sub(r"&gt;", ">", text)
+    text = re.sub(r"&quot;", "\"", text)
+    text = re.sub(r"&#\d+;", " ", text)
+    # 压缩空白
+    text = re.sub(r"\s+", " ", text).strip()
+    return text
+
+
 def build_daily(top_items: list, notes_dir: Path, date_str: str, embed: bool = True, needs: list = None) -> str:
     """生成日报 Markdown。embed=True 时把笔记/概念全文内嵌进日报。"""
     lines = []
@@ -48,7 +66,7 @@ def build_daily(top_items: list, notes_dir: Path, date_str: str, embed: bool = T
         title = item.get("title", "(无标题)")
         url = item.get("url", "")
         source = item.get("source", "")
-        summary = item.get("summary", "")
+        summary = clean_html(item.get("summary", ""))
         score = item.get("_score", {})
         lines.append(f"### {i}｜{title}")
         lines.append("")
