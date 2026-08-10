@@ -26,13 +26,12 @@ import json
 import re
 import sys
 import time
+import unicodedata
 import urllib.parse
 import urllib.request
 import xml.etree.ElementTree as ET
-from datetime import datetime, timezone
 from pathlib import Path
 
-ATOM_NS = {"atom": "http://www.w3.org/2005/Atom"}
 TIMEOUT = 15
 USER_AGENT = "lobster-rss-collect/0.1 search-channel (open source daily digest)"
 
@@ -41,13 +40,12 @@ DOMAIN_BLACKLIST = {
     "adspower.net",        # 营销文（卖自己产品）
     "ai-bot.cn",           # 工具集目录站
 }
-# 知乎降权：不拉黑（有优质回答），但命中则降级到候选尾部并降分
-ZHIHU_PENALTY = 0.5
+# 知乎降权：不拉黑（有优质回答），但命中则排序到候选尾部（升序 key=2.0 在 1.0 之后）
+ZHIHU_PENALTY = 2.0
 
-# 营销词规则：标题/摘要含这些词 → 直接过滤（盘点/十大/大全/优惠 等）
+# 营销词规则：仅标题命中才过滤（扫摘要会误杀深度分析）；保留高置信营销词
 MARKETING_KEYWORDS = [
-    "盘点", "十大", "大全", "优惠", "价格", "购买", "试用", "推广", "广告",
-    "排行榜", "top 10", "top10", "best 10", "2026最佳", "最新工具",
+    "十大", "优惠", "购买", "试用", "排行榜", "最新工具", "top 10", "top10",
 ]
 
 # 摘要长度阈值：搜索结果的摘要过短大概率是标题党/无正文，丢弃
@@ -109,24 +107,32 @@ def clean_html(text: str) -> str:
     return text
 
 
+def is_marketing(item: dict) -> bool:
+    """营销文检测：仅标题命中营销词 → 过滤（不扫摘要，避免误杀深度分析）。"""
+    text = item.get("title", "").lower()
+    return any(kw.lower() in text for kw in MARKETING_KEYWORDS)
+
+
+def hostname_of(url: str) -> str:
+    """提取 URL 主机名（不含端口/路径/查询）。"""
+    try:
+        return urllib.parse.urlparse(url).hostname or ""
+    except ValueError:
+        return ""
+
+
 def is_blacklisted(url: str) -> bool:
-    """域名黑名单检查。"""
-    for domain in DOMAIN_BLACKLIST:
-        if domain in url:
-            return True
-    return False
+    """域名黑名单：hostname 精确/子域匹配（不做 URL 任意子串匹配）。"""
+    host = hostname_of(url).lower()
+    if not host:
+        return False
+    return any(host == d or host.endswith("." + d) for d in DOMAIN_BLACKLIST)
 
 
 def normalize_title(title: str) -> str:
-    """标题归一化：小写 + 去标点，用于去重。"""
-    t = re.sub(r"[\W_]+", "", title.lower())
-    return t
-
-
-def is_marketing(item: dict) -> bool:
-    """营销文检测：标题/摘要含营销词 → 过滤。"""
-    text = f"{item.get('title', '')} {item.get('summary', '')}".lower()
-    return any(kw.lower() in text for kw in MARKETING_KEYWORDS)
+    """标题归一化：NFKC 统一全角/半角 + 小写 + 去标点，用于去重。"""
+    t = unicodedata.normalize("NFKC", title or "").lower()
+    return re.sub(r"[\W_]+", "", t)
 
 
 def collect(queries: list, count: int = 10, max_per_query: int = 10,
@@ -140,17 +146,21 @@ def collect(queries: list, count: int = 10, max_per_query: int = 10,
 
     for q in queries:
         stats["queries"] += 1
+        per_query_kept = 0
         try:
             xml_text = fetch_rss(q, count)
             items = parse_search_rss(xml_text, q)
             stats["fetched"] += len(items)
             for it in items:
+                # 每 query 独立上限，不影响其他 query
+                if per_query_kept >= max_per_query:
+                    break
                 it["summary"] = clean_html(it["summary"])
                 # 质量预筛 1：域名黑名单
                 if is_blacklisted(it["url"]):
                     stats["blacklisted"] += 1
                     continue
-                # 质量预筛 2：营销词（盘点/十大/优惠 等）
+                # 质量预筛 2：营销词（仅标题）
                 if is_marketing(it):
                     stats["marketing"] += 1
                     continue
@@ -164,20 +174,22 @@ def collect(queries: list, count: int = 10, max_per_query: int = 10,
                     stats["deduped"] += 1
                     continue
                 seen_titles.add(key)
-                # 知乎降权：不拉黑，但降低排序优先级
+                # 知乎降权：不拉黑，标记排序 key（输出前清理）
                 if "zhihu.com" in it["url"]:
                     stats["zhihu_penalized"] += 1
                     it["_zhihu_penalty"] = ZHIHU_PENALTY
                 results.append(it)
+                per_query_kept += 1
                 stats["kept"] += 1
-                if len(results) >= max_per_query * len(queries):
-                    break
         except Exception as e:
             stats["errors"].append(f"{q}: {e}")
         time.sleep(1)  # 轻量限速，避免被 Bing 429
 
-    # 知乎降权排序：非知乎在前，知乎按原序在后（保持稳定性）
+    # 知乎降权排序：普通项(1.0)在前，知乎(2.0)在后；稳定排序保持组内原序
     results.sort(key=lambda it: it.get("_zhihu_penalty", 1.0))
+    # 清理内部字段，避免泄漏到下游
+    for it in results:
+        it.pop("_zhihu_penalty", None)
     return {"items": results, "stats": stats}
 
 
@@ -253,7 +265,8 @@ def main():
                      dedup=not args.no_dedup)
     stats = result["stats"]
     print(f"\n📊 统计: 抓取 {stats['fetched']} → 去重 {stats['deduped']} / "
-          f"黑名单 {stats['blacklisted']} / 摘要过短 {stats['short_summary']} → "
+          f"黑名单 {stats['blacklisted']} / 营销 {stats['marketing']} / "
+          f"摘要过短 {stats['short_summary']} / 知乎降权 {stats['zhihu_penalized']} → "
           f"保留 {stats['kept']}", file=sys.stderr)
     if stats["errors"]:
         print("⚠️ 失败:", file=sys.stderr)
@@ -273,13 +286,15 @@ def main():
         if append_path.exists():
             try:
                 existing = json.loads(append_path.read_text(encoding="utf-8"))
-            except (json.JSONDecodeError, OSError):
-                existing = []
-        existing_titles = {re.sub(r"[\W_]+", "", i.get("title", "").lower()) for i in existing}
+            except (json.JSONDecodeError, OSError) as e:
+                # 候选文件损坏时 fail-fast：不静默清空覆盖，避免丢整个 RSS 候选池
+                print(f"❌ 候选文件损坏，拒绝覆盖: {append_path} ({e})", file=sys.stderr)
+                sys.exit(2)
+        existing_titles = {normalize_title(i.get("title", "")) for i in existing}
         merged = list(existing)
         added = 0
         for it in result["items"]:
-            key = re.sub(r"[\W_]+", "", it.get("title", "").lower())
+            key = normalize_title(it.get("title", ""))
             if key not in existing_titles:
                 merged.append(it)
                 existing_titles.add(key)

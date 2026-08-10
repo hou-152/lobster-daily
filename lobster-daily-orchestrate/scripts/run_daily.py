@@ -17,11 +17,9 @@ lobster-run-daily · 龙虾日报一键入口
 """
 
 import argparse
-import json
 import os
 import subprocess
 import sys
-import tempfile
 from datetime import datetime
 from pathlib import Path
 
@@ -88,17 +86,18 @@ def main():
                   ["python3", str(SCRIPTS["collect"]), "--limit", str(args.limit),
                    "--out", str(cand_path)]))
 
+    # ② 需求倒推（先于搜索：更新画像，确保搜索/评分用同一版最新画像）
+    steps.append(("② 需求倒推 (lobster-needs-extract)",
+                  ["python3", str(SCRIPTS["needs"]), "--days", str(args.days)]))
+
     # ①b 采集（搜索通道，按需：只搜 RSS 未覆盖的需求，合并进候选池）
+    # 放在需求倒推之后：搜索读的是最新画像，与评分阶段一致
     steps.append(("①b 采集 搜索 (search_collect, 按需)",
                   ["python3", str(SCRIPTS["search"]),
                    "--profile", str(profile_path),
                    "--top", str(max(3, args.top)),
                    "--rss-candidates", str(cand_path),
                    "--append", str(cand_path)]))
-
-    # ② 需求倒推
-    steps.append(("② 需求倒推 (lobster-needs-extract)",
-                  ["python3", str(SCRIPTS["needs"]), "--days", str(args.days)]))
 
     # ③ 评分过滤
     steps.append(("③ 评分过滤 (lobster-score-filter)",
