@@ -23,7 +23,18 @@ def main() -> int:
 
     profile_path = Path(args.profile)
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
+    # 精确匹配优先，失败后模糊匹配兜底（避免"AI Agent框架"匹配不上"AI Agent"）
     need = next((n for n in profile.get("needs", []) if n.get("keyword") == args.keyword), None)
+    if need is None:
+        kw_lower = args.keyword.lower()
+        need = next(
+            (n for n in profile.get("needs", [])
+             if kw_lower in (n.get("keyword") or "").lower()
+             or (n.get("keyword") or "").lower() in kw_lower),
+            None
+        )
+        if need is not None:
+            print(f"🔍 精确匹配未命中，模糊匹配到: {need['keyword']}", file=sys.stderr)
     if need is None:
         print(f"⚠️ 找不到完全匹配的 keyword: {args.keyword}", file=sys.stderr)
         return 1

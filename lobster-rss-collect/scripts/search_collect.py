@@ -86,7 +86,7 @@ def fetch_semantic_scholar(query: str, limit: int = 5) -> list:
         items.append({
             "title": (paper.get("title") or "").strip(),
             "url": (paper.get("url") or "").strip(),
-            "summary": (paper.get("abstract") or "").strip(),
+            "summary": (paper.get("abstract") or "").strip()[:300],
             "published": published,
             "source": f"scholar:{query}",
             "category": "scholar",
