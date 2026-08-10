@@ -115,10 +115,10 @@ def line_to_block(line: str) -> dict:
     return {"block_type": 2, "text": {"elements": parse_inline(stripped), "style": {}}}
 
 
-def write_blocks(token: str, doc_id: str, blocks: list, batch_size: int = 20):
-    """分批写入 blocks。"""
+def write_blocks(token: str, doc_id: str, blocks: list, batch_size: int = 20) -> list:
+    """分批写入 blocks，返回写入的 block_id 列表（与 blocks 顺序对应）。"""
     url = f"{FEISHU_BASE}/docx/v1/documents/{doc_id}/blocks/{doc_id}/children"
-    total = 0
+    block_ids = []
     for i in range(0, len(blocks), batch_size):
         batch = blocks[i:i + batch_size]
         body = json.dumps({"children": batch, "index": -1}).encode()
@@ -132,8 +132,9 @@ def write_blocks(token: str, doc_id: str, blocks: list, batch_size: int = 20):
             d = json.loads(resp.read().decode())
         if d.get("code") != 0:
             raise RuntimeError(f"写入批次 {i//batch_size+1} 失败: {d.get('msg')}")
-        total += len(batch)
-    return total
+        children = d.get("data", {}).get("children", [])
+        block_ids.extend(c.get("block_id", "") for c in children)
+    return block_ids
 
 
 def add_permission(token: str, doc_id: str, open_id: str):
@@ -158,15 +159,16 @@ def add_permission(token: str, doc_id: str, open_id: str):
         return False
 
 
-def upload_image(token: str, doc_id: str, img_path: Path) -> str:
-    """上传图片到飞书 docx（media upload_all），返回 file_token。"""
+def upload_image(token: str, block_id: str, img_path: Path) -> str:
+    """上传图片到飞书 docx（media upload_all），返回 file_token。
+    parent_node 必须是 block_id（而非 document_id），否则 token 与 block 无绑定关系。"""
     import uuid
     boundary = uuid.uuid4().hex
     file_bytes = img_path.read_bytes()
     fields = {
         "file_name": img_path.name,
         "parent_type": "docx_image",
-        "parent_node": doc_id,
+        "parent_node": block_id,
         "size": str(len(file_bytes)),
     }
     body = b""
@@ -187,6 +189,23 @@ def upload_image(token: str, doc_id: str, img_path: Path) -> str:
     if d.get("code") != 0:
         raise RuntimeError(f"上传图片失败: {d.get('msg')}")
     return d["data"]["file_token"]
+
+
+def replace_image(token: str, doc_id: str, block_id: str, file_token: str):
+    """PATCH replace_image：把 file_token 绑定到已创建的空 image block。"""
+    body = json.dumps({"replace_image": {"token": file_token}}).encode()
+    url = f"{FEISHU_BASE}/docx/v1/documents/{doc_id}/blocks/{block_id}"
+    req = urllib.request.Request(
+        url, data=body,
+        headers={"Authorization": f"Bearer {token}",
+                 "Content-Type": "application/json; charset=utf-8"},
+        method="PATCH"
+    )
+    with urllib.request.urlopen(req, timeout=30) as resp:
+        d = json.loads(resp.read().decode())
+    if d.get("code") != 0:
+        raise RuntimeError(f"替换图片失败: {d.get('msg')}")
+    return True
 
 
 def parse_blocks(md_text: str, images_dir: Path = None) -> list:
@@ -250,23 +269,33 @@ def main():
     print("📝 创建文档...", file=sys.stderr)
     doc_id = create_doc(token, title)
 
-    # 3. 上传图片（把 _image 占位替换为真实 image block）
+    # 3. 准备 blocks：图片占位转空 image block（先写入拿 block_id，再上传绑定）
+    image_slots = []  # (位置索引, 图片路径)
     final_blocks = []
     for b in blocks:
         if isinstance(b, dict) and "_image" in b:
-            try:
-                ft = upload_image(token, doc_id, b["_image"])
-                final_blocks.append({"block_type": 27, "image": {"file_token": ft}})
-                print(f"  🖼️  上传图片: {b['_image'].name}", file=sys.stderr)
-            except Exception as e:
-                print(f"  ⚠️ 图片上传失败 {b['_image'].name}: {e}", file=sys.stderr)
+            image_slots.append((len(final_blocks), b["_image"]))
+            final_blocks.append({"block_type": 27, "image": {"file_token": ""}})
         else:
             final_blocks.append(b)
 
     # 4. 写入 blocks
     print("✍️  写入内容...", file=sys.stderr)
-    total = write_blocks(token, doc_id, final_blocks)
-    print(f"  ✅ 写入 {total} blocks", file=sys.stderr)
+    block_ids = write_blocks(token, doc_id, final_blocks)
+    print(f"  ✅ 写入 {len(block_ids)} blocks", file=sys.stderr)
+
+    # 5. 逐个上传图片并绑定到对应 block（parent_node=block_id + replace_image）
+    for pos, img_path in image_slots:
+        if pos >= len(block_ids):
+            print(f"  ⚠️ 图片位置越界 {img_path.name}", file=sys.stderr)
+            continue
+        bid = block_ids[pos]
+        try:
+            ft = upload_image(token, bid, img_path)
+            replace_image(token, doc_id, bid, ft)
+            print(f"  🖼️  图片已绑定: {img_path.name}", file=sys.stderr)
+        except Exception as e:
+            print(f"  ⚠️ 图片上传失败 {img_path.name}: {e}", file=sys.stderr)
 
     # 4. 设置权限
     if owner_open_id:
