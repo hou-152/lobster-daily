@@ -137,6 +137,25 @@ def relevance_score(candidate: dict, needs: list) -> float:
     return min(5.0, score + matched * 0.5)
 
 
+def matched_need_keywords(candidate: dict, needs: list) -> list:
+    """返回对相关性产生正贡献的需求关键词，不改变评分算法。"""
+    title = candidate.get("title", "")
+    summary = candidate.get("summary", "")
+    cand_tokens = tokenize(title + " " + summary[:500])
+    hits = []
+    for need in needs[:20]:
+        keyword = need.get("keyword", "")
+        if not keyword or len(keyword) < 2:
+            continue
+        if keyword_hit(keyword, title, summary):
+            hits.append(keyword)
+            continue
+        kw_tokens = tokenize(keyword)
+        if kw_tokens and len(keyword) <= 3 and (kw_tokens & cand_tokens):
+            hits.append(keyword)
+    return hits
+
+
 def quality_score(candidate: dict) -> float:
     """质量：来源优先级 + 新鲜度 + 内容长度（0-5）。"""
     score = 0.0
@@ -181,6 +200,7 @@ def main():
     parser.add_argument("--top", type=int, default=5, help="入选数量")
     parser.add_argument("--min-score", type=float, default=1.5, help="最低综合分")
     parser.add_argument("--out", default=None, help="输出 JSON 路径")
+    parser.add_argument("--hits-log", default=None, help="需求命中日志 JSONL 路径（缺省不写）")
     args = parser.parse_args()
 
     # 读候选
@@ -210,9 +230,27 @@ def main():
         scored.append({**cand, "_score": {"relevance": round(rel, 2), "quality": round(qual, 2), "total": round(total, 2)}})
 
     # 过滤 + 排序
-    scored = [s for s in scored if s["_score"]["total"] >= args.min_score]
+    all_scored = scored
+    scored = [s for s in all_scored if s["_score"]["total"] >= args.min_score]
     scored.sort(key=lambda s: s["_score"]["total"], reverse=True)
     top = scored[: args.top]
+
+    if args.hits_log:
+        hits_path = Path(args.hits_log)
+        hits_path.parent.mkdir(parents=True, exist_ok=True)
+        top_ids = {id(item) for item in top}
+        today = datetime.now(timezone.utc).date().isoformat()
+        with hits_path.open("a", encoding="utf-8") as fh:
+            for candidate in all_scored:
+                for keyword in matched_need_keywords(candidate, needs):
+                    row = {
+                        "date": today,
+                        "keyword": keyword,
+                        "in_top": id(candidate) in top_ids,
+                        "candidate_title": candidate.get("title", ""),
+                        "score": candidate["_score"]["total"],
+                    }
+                    fh.write(json.dumps(row, ensure_ascii=False) + "\n")
 
     print(f"\n🏆 入选 Top {len(top)}（阈值 {args.min_score}）:", file=sys.stderr)
     for s in top:

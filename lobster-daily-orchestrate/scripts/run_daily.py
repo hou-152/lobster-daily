@@ -80,6 +80,7 @@ def main():
     rendered_path = workdir / f"daily-{date_str}-rendered.md"
     images_dir = workdir / "images"
     manifest_path = workdir / "images-manifest.json"
+    hits_log_path = workdir / "hits-log.jsonl"
 
     steps = []
 
@@ -109,7 +110,8 @@ def main():
                    "--candidates", str(cand_path),
                    "--profile", str(profile_path),
                    "--top", str(args.top),
-                   "--out", str(top_path)]))
+                   "--out", str(top_path),
+                   "--hits-log", str(hits_log_path)]))
 
     # ④ 提炼任务清单（可选）
     if args.with_distill:

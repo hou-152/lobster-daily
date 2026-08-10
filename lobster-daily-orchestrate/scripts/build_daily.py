@@ -20,6 +20,19 @@ from datetime import datetime, timedelta
 from pathlib import Path
 
 
+FEEDBACK_SECTION = """---
+
+## 📮 反馈
+
+这期日报对你有用吗？
+- 回复 **1** = 有用（喜欢这篇/这个方向）
+- 回复 **2** = 没用（不感兴趣）
+- 回复 **0** = 跳过（默认）
+
+反馈会微调明天推送的权重，让日报越来越像你。
+"""
+
+
 def clean_html(text: str) -> str:
     """剥掉摘要里的 HTML 标签和实体，避免 <div>/<img> 原样进文档。"""
     if not text:
@@ -132,11 +145,8 @@ def build_daily(top_items: list, notes_dir: Path, date_str: str, embed: bool = T
         lines.append(f"- **{i}｜{title}**：{reason}")
     lines.append("")
 
-    # 反馈
-    lines.append("---")
-    lines.append("## 👀 反馈")
-    lines.append("")
-    lines.append("回复告诉我哪篇有用/没用，我会更新你的需求画像，明天更准。")
+    # 反馈入口固定放在 Markdown 末尾。
+    lines.append(FEEDBACK_SECTION.rstrip())
     lines.append("")
 
     return "\n".join(lines)

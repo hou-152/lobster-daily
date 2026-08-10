@@ -81,8 +81,25 @@ python3 scripts/build_daily.py --top top.json --dry-run
 ## 📖 今日精选      ← 每篇：标题/来源/评分/摘要/链接
                       + 三级笔记全文 + 概念提取全文
 ## 💡 推荐理由      ← 每篇一句，关联你的需求画像
-## 👀 反馈          ← 告诉它哪篇有用，明天更准
+## 📮 反馈          ← 回复 1/2/0，微调明天的需求权重
 ```
+
+### 反馈闭环
+
+```bash
+# 同向反馈连续 2 次才生效；单次默认调整 0.2，权重限制在 1.0～5.0
+python3 scripts/apply_feedback.py \
+  --profile ~/.agents/skills/lobster-needs-extract/data/user-profile.json \
+  --keyword Codex --action up
+
+# 每周只生成陈旧需求建议，不自动改画像
+python3 scripts/review_stale_needs.py \
+  --hits-log /tmp/lobster-daily-run/hits-log.jsonl \
+  --profile ~/.agents/skills/lobster-needs-extract/data/user-profile.json \
+  --days 7
+```
+
+`run_daily.py` 会把评分命中以 JSONL 追加到工作目录的 `hits-log.jsonl`。反馈真正改变权重前，会在画像同目录保留一份 `user-profile.backup.json`。
 
 推送到飞书：`feishu_doc` action=create 创建文档 → action=write 写入日报 → 返回链接。
 
@@ -119,7 +136,9 @@ lobster-daily-orchestrate/
 ├── SKILL.md              # AI agent 视角的完整流程
 ├── README.md             # 人类视角的安装指南（本文件）
 └── scripts/
-    └── build_daily.py    # 日报构建器（零依赖）
+    ├── build_daily.py          # 日报构建器（含反馈入口）
+    ├── apply_feedback.py       # 防污染反馈写入
+    └── review_stale_needs.py   # 每周陈旧需求回顾
 ```
 
 ## License
