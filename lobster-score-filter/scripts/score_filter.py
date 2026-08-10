@@ -38,6 +38,7 @@ CATEGORY_PREF = {
     "deep-reading": 1.0,
     "product": 1.0,
     "podcast": 1.0,
+    "science": 1.0,   # q-bio.NC 等学术一手源（泛化：源配置不为单一用户画像服务）
     "social": 1.0,
     "wechat": 1.0,
     "other": 1.0,

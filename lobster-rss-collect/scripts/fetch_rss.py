@@ -20,6 +20,7 @@ lobster-rss-collect · 统一 RSS 抓取器（万物皆可 RSS）
 
 import argparse
 import json
+import re
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
@@ -156,11 +157,28 @@ def load_sources(config_path: Path) -> dict:
 
 
 def excluded_title(title: str, exclude_words: list) -> bool:
-    """标题是否命中排除词（arxiv 噪声控制：综述/预告类）。"""
+    """标题是否命中排除词（arxiv 噪声控制：综述/预告类）。
+
+    英文词用词边界匹配（与 score_filter.keyword_hit 一致）：
+    - "A Survey" 匹配 "A Survey of..." ✅
+    - "A Survey" 不匹配 "Counterfactual Surveying" ❌（避免子串误伤）
+    中文词整串匹配。
+    """
     if not exclude_words:
         return False
     t = title.lower()
-    return any(w.lower() in t for w in exclude_words)
+    for w in exclude_words:
+        kw = str(w).lower().strip()
+        if not kw:
+            continue
+        # 英文/数字词（含空格短语）：前后不能是英文字母/数字
+        if re.fullmatch(r"[a-z0-9][a-z0-9\- ]*[a-z0-9]", kw) or re.fullmatch(r"[a-z0-9]", kw):
+            if re.search(rf"(?<![a-zA-Z0-9]){re.escape(kw)}(?![a-zA-Z0-9])", t):
+                return True
+        # 中文或混合：整串匹配
+        elif kw in t:
+            return True
+    return False
 
 
 def parse_list_value(value) -> list:

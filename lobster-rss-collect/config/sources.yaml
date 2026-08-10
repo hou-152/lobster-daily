@@ -9,6 +9,9 @@
 rss_feeds:
 
   # --- AI 与研究者 (5) ---
+  # owenyoung-com / lastweekin-ai 标 tier2 而非 tier3：虽然本质是聚合，但属**人工策展**
+  # （作者逐条筛选/解读，有判断力介入），区别于 hnrss 的**投票聚合**（无判断力，纯排序）。
+  # 标准：人工策展聚合 = tier2，投票/算法聚合 = tier3。
   - name: owenyoung-com
     url: "https://www.owenyoung.com/atom.xml"
     category: ai
