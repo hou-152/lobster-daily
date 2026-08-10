@@ -32,7 +32,17 @@ def clean_html(text: str) -> str:
     text = re.sub(r"&lt;", "<", text)
     text = re.sub(r"&gt;", ">", text)
     text = re.sub(r"&quot;", "\"", text)
+    text = re.sub(r"&#39;", "'", text)
+    text = re.sub(r"&apos;", "'", text)
+    text = re.sub(r"&mdash;", "—", text)
+    text = re.sub(r"&ndash;", "–", text)
+    text = re.sub(r"&hellip;", "…", text)
+    text = re.sub(r"&ldquo;|&rdquo;", "\"", text)
+    text = re.sub(r"&lsquo;|&rsquo;", "'", text)
+    text = re.sub(r"&middot;", "·", text)
+    text = re.sub(r"&bull;", "•", text)
     text = re.sub(r"&#\d+;", " ", text)
+    text = re.sub(r"&[a-zA-Z]+;", " ", text)  # 兜底：其他命名实体
     text = re.sub(r"\s+", " ", text).strip()
     return text
 

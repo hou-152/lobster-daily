@@ -199,6 +199,11 @@ def main():
         print("❌ 需要 FEISHU_APP_ID 和 FEISHU_APP_SECRET 环境变量", file=sys.stderr)
         print("   复制 .env.example 为 .env 并填写，或 export 到环境", file=sys.stderr)
         sys.exit(1)
+    # 前置校验：租户域名缺失则直接失败（不创建文档后才发现无法生成链接）
+    if not args.doc_domain:
+        print("❌ 需要 FEISHU_DOC_DOMAIN（飞书租户域名），如 https://你的租户域名.feishu.cn", file=sys.stderr)
+        print("   设置: export FEISHU_DOC_DOMAIN=https://xxx.feishu.cn", file=sys.stderr)
+        sys.exit(1)
 
     # 1. 取 token
     print("🔑 获取 token...", file=sys.stderr)
