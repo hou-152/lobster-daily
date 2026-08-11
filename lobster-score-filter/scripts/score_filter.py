@@ -16,11 +16,21 @@ lobster-score-filter · AI 评分过滤器
     python3 score_filter.py --candidates /tmp/candidates.json --top 5
     python3 score_filter.py --candidates /tmp/candidates.json --min-score 2.0
 
+费曼三步法终审（可选，LLM 在编排层调用，本脚本零第三方依赖）：
+    1) 导出待审清单：  --review-out /tmp/review-task.json [--review-top 15]
+    2) LLM 按立场/证据/逻辑打分（编排层），结果格式：
+       [{"review_id": "<导出清单里的16位id>", "position": 4.5, "evidence": 3.5, "logic": 4, "total": 4.0}]
+       review_id 必须原样回传，用于跨运行稳定关联（不用排序位置）
+    3) 合并重排：      --review-file /tmp/review-result.json [--review-weight 0.5]
+       最终分 = 规则分 × (1-w) + 费曼分 × w
+
 输出：入选 JSON（Top N，按综合分排序）
 """
 
 import argparse
+import hashlib
 import json
+import math
 import re
 import sys
 from datetime import datetime, timezone
@@ -193,7 +203,42 @@ def quality_score(candidate: dict) -> float:
     return min(5.0, score)
 
 
+def candidate_review_id(candidate: dict) -> str:
+    """生成稳定评审 ID：优先规范化 URL；无 URL 时用 source+title 生成 SHA-256。
+
+    与排序位置无关，跨运行（候选/画像/参数变化）仍能稳定关联到同一篇文章。
+    """
+    url = (candidate.get("url") or "").strip()
+    if url:
+        raw = f"url:{url}"
+    else:
+        raw = "fallback:{source}\n{title}".format(
+            source=(candidate.get("source") or "").strip(),
+            title=(candidate.get("title") or "").strip(),
+        )
+    return hashlib.sha256(raw.encode("utf-8")).hexdigest()[:16]
+
+
+def finite_number(value, field: str) -> float:
+    """把值转成有限实数；bool/NaN/Inf/非数字一律拒绝。"""
+    if isinstance(value, bool):
+        raise ValueError(f"{field} 必须是数字")
+    try:
+        number = float(value)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"{field} 必须是数字") from exc
+    if not math.isfinite(number):
+        raise ValueError(f"{field} 必须是有限数字")
+    return number
+
+
 def main():
+    def nonnegative_int(value):
+        number = int(value)
+        if number < 0:
+            raise argparse.ArgumentTypeError("必须 >= 0")
+        return number
+
     parser = argparse.ArgumentParser(description="龙虾日报 · AI 评分过滤器")
     parser.add_argument("--candidates", required=True, help="采集候选 JSON 路径")
     parser.add_argument("--profile", default=None, help="需求画像 JSON 路径")
@@ -201,7 +246,14 @@ def main():
     parser.add_argument("--min-score", type=float, default=1.5, help="最低综合分")
     parser.add_argument("--out", default=None, help="输出 JSON 路径")
     parser.add_argument("--hits-log", default=None, help="需求命中日志 JSONL 路径（缺省不写）")
+    parser.add_argument("--review-out", default=None, help="导出待 LLM 评审的候选清单 JSON（含 review_id/规则分）；仅写文件，不改评分输出")
+    parser.add_argument("--review-top", type=nonnegative_int, default=15, help="--review-out 导出的条数（默认 15）")
+    parser.add_argument("--review-file", default=None, help="LLM 费曼三步法评审结果 JSON，与规则分混合重排")
+    parser.add_argument("--review-weight", type=float, default=0.5, help="费曼分权重（默认 0.5，规则分占 1-w）")
     args = parser.parse_args()
+
+    if not math.isfinite(args.review_weight):
+        parser.error("--review-weight 必须是有限数字")
 
     # 读候选
     cand_path = Path(args.candidates)
@@ -233,6 +285,82 @@ def main():
     all_scored = scored
     scored = [s for s in all_scored if s["_score"]["total"] >= args.min_score]
     scored.sort(key=lambda s: s["_score"]["total"], reverse=True)
+
+    # ── 模式 A：导出待 LLM 评审清单（不改变评分/排序输出，仅额外写文件）──
+    if args.review_out:
+        review_task = []
+        for i, s in enumerate(scored[: args.review_top], 1):
+            review_task.append({
+                "idx": i,
+                "review_id": candidate_review_id(s),
+                "title": s.get("title", ""),
+                "summary": (s.get("summary", "") or "")[:300],
+                "source": s.get("source", ""),
+                "category": s.get("category", ""),
+                "tier": s.get("tier", 3),
+                "current_total": s["_score"]["total"],
+            })
+        rv_path = Path(args.review_out)
+        rv_path.parent.mkdir(parents=True, exist_ok=True)
+        rv_path.write_text(json.dumps(review_task, ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"💬 已导出 {len(review_task)} 条待评审清单: {rv_path}（LLM 按立场/证据/逻辑打分后，用 --review-file 合并）", file=sys.stderr)
+
+    # ── 模式 B：读入 LLM 费曼三步法评审结果，按 review_id 稳定关联并混合重排 ──
+    if args.review_file:
+        rv_path = Path(args.review_file)
+        if not rv_path.exists():
+            print(f"❌ 找不到评审结果: {rv_path}", file=sys.stderr)
+            sys.exit(1)
+        reviews = json.loads(rv_path.read_text(encoding="utf-8"))
+        if not isinstance(reviews, list):
+            parser.error("--review-file 顶层必须是 JSON 数组")
+        by_review_id = {}
+        for row_no, r in enumerate(reviews, 1):
+            if not isinstance(r, dict):
+                parser.error(f"评审第 {row_no} 项必须是对象")
+            review_id = r.get("review_id")
+            if isinstance(review_id, bool) or not isinstance(review_id, str) or len(review_id) != 16:
+                parser.error(f"评审第 {row_no} 项 review_id 必须是 16 位字符串")
+            if review_id in by_review_id:
+                parser.error(f"评审结果存在重复 review_id: {review_id}")
+            try:
+                total = finite_number(r.get("total"), f"review_id={review_id} total")
+            except ValueError as exc:
+                parser.error(str(exc))
+            if not 0.0 <= total <= 5.0:
+                parser.error(f"review_id={review_id} total 必须在 0..5")
+            by_review_id[review_id] = {**r, "total": total}
+        w = max(0.0, min(1.0, args.review_weight))
+        merged = 0
+        # 按稳定 review_id 关联：与排序位置无关，跨运行候选/排序变化不会错配。
+        # 遍历全部候选而非 scored[:review_top]：同分候选跨越导出边界时也能合并。
+        for s in scored:
+            r = by_review_id.get(candidate_review_id(s))
+            if r is None:
+                continue
+            feynman = r["total"]
+            rule_total = s["_score"]["total"]
+            final_total = rule_total * (1 - w) + feynman * w
+            s["_score"]["feynman"] = {
+                "position": r.get("position"),
+                "evidence": r.get("evidence"),
+                "logic": r.get("logic"),
+                "total": round(feynman, 2),
+            }
+            s["_score"]["final_total"] = round(final_total, 2)
+            merged += 1
+        unmatched = len(by_review_id) - merged
+        if unmatched:
+            print(f"⚠️ {unmatched} 条评审未匹配到当前候选（候选/排序可能已变化），已忽略", file=sys.stderr)
+        print(f"🎭 已合并 {merged} 条费曼评审（权重 {w:.0%}），最终分 = 规则分×{1-w:.0%} + 费曼分×{w:.0%}", file=sys.stderr)
+        # 已评审组永远在前（按 final_total 降序），未评审组沉底（组内按规则分降序）
+        def sort_key(s):
+            score = s.get("_score", {})
+            reviewed = "final_total" in score
+            primary = score["final_total"] if reviewed else score["total"]
+            return (reviewed, primary, score["total"])
+        scored.sort(key=sort_key, reverse=True)
+
     top = scored[: args.top]
 
     if args.hits_log:
@@ -255,7 +383,10 @@ def main():
     print(f"\n🏆 入选 Top {len(top)}（阈值 {args.min_score}）:", file=sys.stderr)
     for s in top:
         sc = s["_score"]
-        print(f"  {sc['total']:.1f} (rel={sc['relevance']:.1f} q={sc['quality']:.1f}) | [{s.get('source','')}] {s.get('title','')[:50]}", file=sys.stderr)
+        if "final_total" in sc:
+            print(f"  {sc['final_total']:.2f} (rule={sc['total']:.2f} feynman={sc['feynman']['total']:.2f}) | [{s.get('source','')}] {s.get('title','')[:50]}", file=sys.stderr)
+        else:
+            print(f"  {sc['total']:.1f} (rel={sc['relevance']:.1f} q={sc['quality']:.1f}) | [{s.get('source','')}] {s.get('title','')[:50]}", file=sys.stderr)
 
     if args.out:
         out_path = Path(args.out)
