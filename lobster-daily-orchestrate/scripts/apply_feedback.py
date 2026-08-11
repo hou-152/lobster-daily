@@ -23,18 +23,29 @@ def main() -> int:
 
     profile_path = Path(args.profile)
     profile = json.loads(profile_path.read_text(encoding="utf-8"))
-    # 精确匹配优先，失败后模糊匹配兜底（避免"AI Agent框架"匹配不上"AI Agent"）
+    # 精确匹配优先；失败后模糊匹配兜底（避免“AI Agent框架”匹配不上“AI Agent”）。
+    # 模糊匹配加长度限制（|Δlen| ≤ 2），且命中多个候选时拒绝——防止“AI”误伤
+    # “AI Agent框架”“AI安全”等所有含 AI 的需求（误操作比精确匹配的麻烦更危险）。
     need = next((n for n in profile.get("needs", []) if n.get("keyword") == args.keyword), None)
-    if need is None:
+    # 模糊匹配只在精确失败后启用，且仅限 ≥3 字关键词：
+    # 短词（如“AI”）包含关系命中面太大，“AI”能匹配“AI安全”“AI绘画”所有含 AI 需求，
+    # 长度差限制也挡不住（“AI”vs“AI安全”差 1）；短词歧义高，只允许精确匹配。
+    if need is None and len(args.keyword) >= 3:
         kw_lower = args.keyword.lower()
-        need = next(
-            (n for n in profile.get("needs", [])
-             if kw_lower in (n.get("keyword") or "").lower()
-             or (n.get("keyword") or "").lower() in kw_lower),
-            None
-        )
-        if need is not None:
+        kw_len = len(args.keyword)
+        fuzzy = [
+            n for n in profile.get("needs", [])
+            if abs(len(n.get("keyword", "")) - kw_len) <= 2
+            and (kw_lower in (n.get("keyword") or "").lower()
+                 or (n.get("keyword") or "").lower() in kw_lower)
+        ]
+        if len(fuzzy) == 1:
+            need = fuzzy[0]
             print(f"🔍 精确匹配未命中，模糊匹配到: {need['keyword']}", file=sys.stderr)
+        elif len(fuzzy) > 1:
+            names = "、".join(n["keyword"] for n in fuzzy[:5])
+            print(f"⚠️ 模糊匹配命中多个候选（{names}），请用完整 keyword 重试", file=sys.stderr)
+            return 1
     if need is None:
         print(f"⚠️ 找不到完全匹配的 keyword: {args.keyword}", file=sys.stderr)
         return 1

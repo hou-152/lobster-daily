@@ -32,9 +32,10 @@ DEFAULT_SESSIONS = Path.home() / ".openclaw-lobster2" / "agents" / "main" / "ses
 DEFAULT_PROFILE = Path(__file__).parent.parent / "data" / "user-profile.json"
 
 # 显式需求关键词（中文 + 英文）
-# 注意：alternation 中长词在前（我们>我），避免"我们"被拆成"我"+"们"
+# 注意：alternation 中长词在前（想要>想），避免前缀拆错
+# 注意：不收录单字「想」「我」——召回率虽高但精确率太低（“我觉得这个方案不行”会被误提取）
 EXPLICIT_PATTERNS = [
-    r"(?:我们|我|想要|想|需要|希望|关注|关心|感兴趣|研究一下|研究|学习|了解|试试|解决|优化|改进|做一个|搭一个|写一个|做|要)\s*(?:一个|一下|点|的)?\s*([^，。！？\n]{2,30})",
+    r"(?:我们|想要|需要|希望|关注|关心|感兴趣|研究一下|研究|学习|了解|试试|解决|优化|改进|做一个|搭一个|写一个|做|要)\s*(?:一个|一下|点|的)?\s*([^，。！？\n]{2,30})",
     r"(?:帮我|给我|推荐|找找|找|搜索|查|看看|研究一下|调研|对比)\s*([^，。！？\n]{2,30})",
     r"(?:这个|那个|这|那)\s*(?:问题|主题|方向|项目|东西|想法|概念|产品|工具)\s*(?:怎么样|怎么看|怎么做|是什么|好不好|值不值|可行吗)",
 ]
@@ -185,8 +186,10 @@ def merge_profile(profile_path: Path, explicit: Counter, implicit: Counter,
     existing = {n["keyword"]: n for n in profile["needs"]}
 
     # 衰减：显式需求慢（×0.9，用户明确说过要长期稳定），隐式需求快（×0.7）
+    # 记录衰减前权重（临时字段，写盘前清理），供“重新发现时只重置衰减”使用
     for n in profile["needs"]:
         decay = 0.9 if n.get("type") == "explicit" else 0.7
+        n["_pre_decay_weight"] = n.get("weight", 1)
         n["weight"] = round(n.get("weight", 1) * decay, 2)
 
     # 合并显式需求（权重高）
@@ -195,22 +198,31 @@ def merge_profile(profile_path: Path, explicit: Counter, implicit: Counter,
             existing[signal]["weight"] = min(5, existing[signal]["weight"] + count)
             existing[signal]["type"] = "explicit"
             existing[signal]["last_seen"] = datetime.now(timezone.utc).isoformat()
+            existing[signal]["_explicit_updated"] = True  # 隐式阶段不覆盖显式增量
         else:
-            profile["needs"].append({
+            new_need = {
                 "keyword": signal,
                 "type": "explicit",
                 "weight": min(5, count),
                 "confidence": 0.8,  # 显式需求置信度高
                 "first_seen": datetime.now(timezone.utc).isoformat(),
                 "last_seen": datetime.now(timezone.utc).isoformat(),
-            })
+            }
+            profile["needs"].append(new_need)
+            # 同步索引：否则同轮隐式阶段会再插入一条相同 keyword 的重复项
+            existing[signal] = new_need
+            existing[signal]["_explicit_updated"] = True
 
     # 合并隐式需求（频次 >= 阈值才收录，置信度按频次）
+    # 注意：隐式需求重新发现时只重置衰减（恢复到衰减前权重），不额外加回——
+    # 否则“持续讨论”会因反复扫描无限膨胀，隐式比显式更持久，违背衰减设计。
     for token, count in implicit.most_common(30):
         if count < min_implicit_count:
             continue
         if token in existing:
-            existing[token]["weight"] = min(5, existing[token]["weight"] + count * 0.5)
+            # 显式阶段已加过权（用户明确表达过）：隐式只更新 last_seen，不覆盖
+            if not existing[token].get("_explicit_updated"):
+                existing[token]["weight"] = min(5, existing[token].get("_pre_decay_weight", existing[token]["weight"]))
             existing[token]["last_seen"] = datetime.now(timezone.utc).isoformat()
         else:
             confidence = min(0.7, 0.3 + count * 0.1)
@@ -222,6 +234,11 @@ def merge_profile(profile_path: Path, explicit: Counter, implicit: Counter,
                 "first_seen": datetime.now(timezone.utc).isoformat(),
                 "last_seen": datetime.now(timezone.utc).isoformat(),
             })
+
+    # 清理临时字段（不写入画像文件）
+    for n in profile["needs"]:
+        n.pop("_pre_decay_weight", None)
+        n.pop("_explicit_updated", None)
 
     # 清理权重过低的（< 0.3），避免画像膨胀
     profile["needs"] = [

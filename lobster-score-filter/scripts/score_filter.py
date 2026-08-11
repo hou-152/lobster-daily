@@ -140,11 +140,12 @@ def relevance_score(candidate: dict, needs: list) -> float:
             matched += 1
 
     # 分类偏好加成（画像里高频的分类）
-    if category in CATEGORY_PREF:
-        score += CATEGORY_PREF[category] * 0.3
+    cat_bonus = CATEGORY_PREF.get(category, 1.0) * 0.3
 
-    # 归一化到 0-5
-    return min(5.0, score + matched * 0.5)
+    # 归一化到 0-5（修复：原 min(5.0, score + matched*0.5) 在 weight 普遍 5.0 时，
+    # 命中 1 个和命中 5 个都被压到 4.3~5.0，区分度≈0。改为强度×0.5 + 命中广度×1.2：
+    # 命中 1=3.25 / 命中 5=5.00（真实候选池实测区分度 1.75，保留排序能力））
+    return min(5.0, score * 0.5 + matched * 1.2 + cat_bonus)
 
 
 def matched_need_keywords(candidate: dict, needs: list) -> list:
