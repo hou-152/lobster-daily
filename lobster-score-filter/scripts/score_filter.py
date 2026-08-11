@@ -118,8 +118,12 @@ def relevance_score(candidate: dict, needs: list) -> float:
     # 候选关键词（用于 token 重叠兜底）
     cand_tokens = tokenize(title + " " + summary[:500])
 
+    # 画像最大权重：广度奖励的归一化基准（高权重核心需求命中才有高广度分）
+    max_weight = max((n.get("weight", 1.0) for n in needs[:20]), default=1.0)
+
     score = 0.0
     matched = 0
+    hit_weight_sum = 0.0
     for need in needs[:20]:  # 只比对 top 20 需求
         keyword = need.get("keyword", "")
         if not keyword or len(keyword) < 2:
@@ -130,6 +134,7 @@ def relevance_score(candidate: dict, needs: list) -> float:
             confidence = need.get("confidence", 0.5)
             score += weight * confidence
             matched += 1
+            hit_weight_sum += weight
             continue
         # 兜底：中文短词（2-3字）通过 token 重叠判断，避免"学习"泛匹配
         kw_tokens = tokenize(keyword)
@@ -138,14 +143,20 @@ def relevance_score(candidate: dict, needs: list) -> float:
             confidence = need.get("confidence", 0.5)
             score += weight * confidence * 0.3  # 短词命中降权
             matched += 1
+            hit_weight_sum += weight
 
     # 分类偏好加成（画像里高频的分类）
     cat_bonus = CATEGORY_PREF.get(category, 1.0) * 0.3
 
-    # 归一化到 0-5（修复：原 min(5.0, score + matched*0.5) 在 weight 普遍 5.0 时，
-    # 命中 1 个和命中 5 个都被压到 4.3~5.0，区分度≈0。改为强度×0.5 + 命中广度×1.2：
-    # 命中 1=3.25 / 命中 5=5.00（真实候选池实测区分度 1.75，保留排序能力））
-    return min(5.0, score * 0.5 + matched * 1.2 + cat_bonus)
+    # 归一化到 0-5：强度×0.8 + 加权广度奖励 + 分类加成。
+    # 广度奖励按命中需求的平均权重缩放（avg/max_weight），低权重需求堆数量拿不到高分，
+    # 高权重核心需求单命中也有价值——深度优先，区分度仍 >1.0。
+    # （评审约束实测：1×w5=3.50 > 5×w1=2.70；5×w5 区分度=1.50）
+    breadth = 0.0
+    if matched > 0:
+        avg_weight = hit_weight_sum / matched
+        breadth = min(2.0, matched * 0.4 * (avg_weight / max_weight))
+    return min(5.0, score * 0.8 + breadth + cat_bonus)
 
 
 def matched_need_keywords(candidate: dict, needs: list) -> list:
